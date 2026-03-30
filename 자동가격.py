@@ -1,7 +1,10 @@
 import requests
 import sqlite3
 import os
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+
+kst = timezone(timedelta(hours=9))
+now_str = datetime.now(kst).strftime('%Y-%m-%d %H:%M:%S')
 
 # API 키 및 URL 설정
 API_KEY = os.getenv("LOSTARK_API_KEY")
