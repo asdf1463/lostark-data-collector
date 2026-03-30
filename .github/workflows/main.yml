@@ -2,31 +2,32 @@ name: Daily LostArk Data Collect
 
 on:
   schedule:
-    - cron: '0 14 * * *' # 한국 시간 매일 오후 11시 실행
-  workflow_dispatch: # 수동 실행 버튼 생성
+    - cron: '0 14 * * *' # UTC 14:00 = 한국 시간(KST) 오후 11:00
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4 # v3 -> v4로 업데이트 (Node.js 경고 해결)
       
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5 # v4 -> v5로 업데이트 (Node.js 경고 해결)
         with:
           python-version: '3.10'
           
       - name: Install dependencies
-        run: pip install requests pandas
+        run: pip install requests
         
       - name: Run script
         env:
           LOSTARK_API_KEY: ${{ secrets.LOSTARK_API_KEY }}
+          TZ: Asia/Seoul # 서버 환경변수에 한국 시간대 강제 설정
         run: python 자동가격.py
         
       - name: Commit and Push
         run: |
-          git config --global user.name "Data Collector"
+          git config --global user.name "GitHub Action"
           git config --global user.email "action@github.com"
           git add lostark_ts_data.db
           git commit -m "Update LostArk Data: $(date)" || echo "No changes to commit"
