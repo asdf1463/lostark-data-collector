@@ -167,13 +167,13 @@ try:
             if price and price > 0:
                 buy_prices.append(price)
 
-            # 5개 모이면 반복문 종료
-            if len(buy_prices) >= 5:
+            # 10개 모이면 반복문 종료
+            if len(buy_prices) >= 10:
                 break
 
         if buy_prices:
-            # 수집된 가격들의 평균 계산
-            avg_buy_price = sum(buy_prices) / len(buy_prices)
+            filtered_prices = buy_prices[4:] 
+            avg_buy_price = sum(filtered_prices) / len(filtered_prices)
 
             cursor.execute('''
                 INSERT INTO gem_prices (timestamp, tier, gem_name, top5_avg_price)
