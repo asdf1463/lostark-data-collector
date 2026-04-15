@@ -88,112 +88,110 @@ cursor.execute('''
 conn.commit()
 
 try:
-    print("=== 생활 재료 시계열 데이터 수집 시작 ===")
+    # 1. 생활 재료 시계열 데이터 수집 (항목별 예외 처리)
+    print(f"=== 생활 재료 수집 시작 (기준시간: {now_str}) ===")
     for code in category_codes:
-        response = requests.post(MARKET_URL, headers=headers, json={"CategoryCode": code})
-        response.raise_for_status()
-        items = response.json().get("Items", [])
+        try:
+            response = requests.post(MARKET_URL, headers=headers, json={"CategoryCode": code})
+            response.raise_for_status()
+            items = response.json().get("Items", [])
 
-        for item in items:
-            name = item.get("Name", "")
-            grade = item.get("Grade", "")
-            yday_avg_price = item.get("YDayAvgPrice")
+            for item in items:
+                try: # 항목별(등급별) 예외 처리 시작
+                    name = item.get("Name", "")
+                    grade = item.get("Grade", "")
+                    yday_avg_price = item.get("YDayAvgPrice")
 
-            custom_grade = None
-            if grade == "희귀":
-                if "아비도스" in name:
-                    custom_grade = "아비도스"
-                elif any(keyword in name for keyword in ["오레하", "화사한", "단단한", "튼튼한"]):
-                    custom_grade = "희귀"
-            elif grade in ["일반", "고급"]:
-                custom_grade = grade
-            elif grade == "영웅":
-                custom_grade = "영웅"
-                if yday_avg_price is not None:
-                    yday_avg_price *= 10
+                    # 등급 분류 및 가격 가공 로직
+                    custom_grade = None
+                    if grade == "희귀":
+                        if "아비도스" in name: 
+                            custom_grade = "아비도스"
+                        elif any(keyword in name for keyword in ["오레하", "화사한", "단단한", "튼튼한"]): 
+                            custom_grade = "희귀"
+                    elif grade in ["일반", "고급"]: 
+                        custom_grade = grade
+                    elif grade == "영웅":
+                        custom_grade = "영웅"
+                        if yday_avg_price is not None: 
+                            yday_avg_price *= 10
 
-            if custom_grade and yday_avg_price is not None:
-                cursor.execute('''
-                    INSERT INTO life_materials (timestamp, category_code, grade, item_name, yday_avg_price)
-                    VALUES (?, ?, ?, ?, ?)
-                ''', (now_str, code, custom_grade, name, yday_avg_price))
+                    # 데이터 적치
+                    if custom_grade and yday_avg_price is not None:
+                        cursor.execute('''
+                            INSERT INTO life_materials (timestamp, category_code, grade, item_name, yday_avg_price)
+                            VALUES (?, ?, ?, ?, ?)
+                        ''', (now_str, code, custom_grade, name, yday_avg_price))
+                        print(f"[저장됨] 생활: {name} ({custom_grade}) | 가격: {yday_avg_price}")
+                        conn.commit() # 항목별로 즉시 반영
+                except Exception as item_err:
+                    print(f"  └ [항목 에러] {item.get('Name')} 처리 실패: {item_err}")
+                    continue
+        except Exception as cat_err:
+            print(f"[카테고리 에러] 코드 {code} 호출 실패: {cat_err}")
+            continue
 
-                print(f"[저장됨] 분류: {custom_grade} | 아이템: {name} | 전일평균가: {yday_avg_price}")
-
-    print("\n=== 배틀아이템 & 융화재료 데이터 수집 시작 ===")
+    # 2. 배틀아이템 & 융화재료 데이터 수집 (항목별 예외 처리)
+    print("\n=== 배틀아이템 & 융화재료 수집 시작 ===")
     for item in items_to_search:
-        data = {"CategoryCode": item["category"], "ItemName": item["name"]}
-        response = requests.post(MARKET_URL, headers=headers, json=data)
+        try: # 항목별 예외 처리 시작
+            data = {"CategoryCode": item["category"], "ItemName": item["name"]}
+            response = requests.post(MARKET_URL, headers=headers, json=data)
+            response.raise_for_status()
+            results = response.json().get("Items", [])
+
+            yday_avg_price = None
+            for result in results:
+                if result["Name"] == item["name"]:
+                    yday_avg_price = result.get("YDayAvgPrice")
+                    break
+
+            if yday_avg_price is not None:
+                cursor.execute('''
+                    INSERT INTO crafted_items (timestamp, category_code, item_name, yday_avg_price)
+                    VALUES (?, ?, ?, ?)
+                ''', (now_str, item["category"], item["name"], yday_avg_price))
+                print(f"[저장됨] 제작: {item['name']} | 가격: {yday_avg_price}")
+                conn.commit() # 저장 즉시 반영
+            else:
+                print(f"[누락] {item['name']}: 전일 평균가 정보 없음 (None)")
+        except Exception as e:
+            print(f"[에러] {item['name']} 수집 중 오류: {e}")
+            continue
+
+    # 3. 기축통화(보석) 시세 데이터 수집
+    print("\n=== 보석 시세 수집 시작 ===")
+    try:
+        auction_payload = {
+            "Sort": "BUY_PRICE", "SortCondition": "ASC", "CategoryCode": 210000, 
+            "ItemTier": 4, "ItemName": "10레벨 겁화", "PageNo": 1
+        }
+        response = requests.post(AUCTION_URL, headers=headers, json=auction_payload)
         response.raise_for_status()
-        results = response.json().get("Items", [])
+        gem_items = response.json().get("Items", [])
 
-        yday_avg_price = None
-        for result in results:
-            if result["Name"] == item["name"]:
-                yday_avg_price = result.get("YDayAvgPrice")
-                break
-
-        if yday_avg_price is not None:
-            cursor.execute('''
-                INSERT INTO crafted_items (timestamp, category_code, item_name, yday_avg_price)
-                VALUES (?, ?, ?, ?)
-            ''', (now_str, item["category"], item["name"], yday_avg_price))
-
-            print(f"[저장됨] 아이템명: {item['name']} | 전일평균가: {yday_avg_price}")
-
-    print("\n=== 기축통화(보석) 시세 데이터 수집 시작 ===")
-
-    auction_payload = {
-        "Sort": "BUY_PRICE",  # 즉시 구매가 기준으로 정렬
-        "SortCondition": "ASC",  # 오름차순 (가장 싼 것부터)
-        "CategoryCode": 210000,  # 보석
-        "ItemTier": 4,  # 4티어
-        "ItemName": "10레벨 겁화",  # 이름
-        "PageNo": 1
-    }
-
-    response = requests.post(AUCTION_URL, headers=headers, json=auction_payload)
-    response.raise_for_status()
-    auction_data = response.json()
-
-    gem_items = auction_data.get("Items", [])
-
-    if gem_items:
-        buy_prices = []
-
-        # 검색된 매물들을 순회하며 유효한 즉시구매가(0보다 큰 값) 수집
-        for item in gem_items:
-            price = item.get("AuctionInfo", {}).get("BuyPrice")
-            if price and price > 0:
-                buy_prices.append(price)
-
-            # 10개 모이면 반복문 종료
+        if gem_items:
+            buy_prices = [i.get("AuctionInfo", {}).get("BuyPrice") for i in gem_items if i.get("AuctionInfo", {}).get("BuyPrice", 0) > 0]
             if len(buy_prices) >= 10:
-                break
+                filtered_prices = buy_prices[4:] 
+                avg_buy_price = sum(filtered_prices) / len(filtered_prices)
 
-        if buy_prices:
-            filtered_prices = buy_prices[4:] 
-            avg_buy_price = sum(filtered_prices) / len(filtered_prices)
-
-            cursor.execute('''
-                INSERT INTO gem_prices (timestamp, tier, gem_name, top5_avg_price)
-                VALUES (?, ?, ?, ?)
-            ''', (now_str, 4, "10레벨 겁화", avg_buy_price))
-
-            print(f"[저장됨] 보석: 10레벨 겁화 (4티어)")
-            print(f" -> 수집된 상위 {len(buy_prices)}개 가격: {buy_prices}")
-            print(f" -> 산출된 평균가: {avg_buy_price:,.0f} 골드")
+                cursor.execute('''
+                    INSERT INTO gem_prices (timestamp, tier, gem_name, top5_avg_price)
+                    VALUES (?, ?, ?, ?)
+                ''', (now_str, 4, "10레벨 겁화", avg_buy_price))
+                print(f"[저장됨] 보석: 10레벨 겁화 평균가: {avg_buy_price:,.0f} 골드")
+                conn.commit()
         else:
-            print("즉시 구매가가 설정된 10레벨 겁화 보석 매물이 없습니다.")
-    else:
-        print("조건에 맞는 10레벨 겁화 보석 매물을 찾을 수 없습니다.")
+            print("[누락] 보석 매물을 찾을 수 없습니다.")
+    except Exception as e:
+        print(f"[에러] 보석 시세 수집 실패: {e}")
 
-    conn.commit()
-    print(f"\n성공적으로 '{db_path}' 파일에 모든 시계열 데이터가 누적되었습니다!")
+    print(f"\n성공적으로 모든 시계열 데이터가 '{db_path}'에 누적되었습니다!")
 
-except requests.exceptions.RequestException as e:
-    print("API 호출 실패:", e)
-except Exception as e:
-    print("에러 발생:", e)
+except Exception as global_e:
+    print(f"오류 발생: {global_e}")
+
 finally:
     conn.close()
+    print("DB 연결을 종료합니다.")
