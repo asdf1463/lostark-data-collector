@@ -2,7 +2,7 @@ name: Daily LostArk Data Collect
 
 on:
   schedule:
-    - cron: '00 16 * * *'
+    - cron: '00 3 * * *'
   workflow_dispatch:
 
 jobs:
