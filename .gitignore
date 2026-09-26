@@ -1,0 +1,6 @@
+__pycache__/
+*.py[cod]
+.venv/
+analysis_outputs/
+lostark_analysis_outputs/
+analysis/outputs/
