@@ -19,3 +19,12 @@ python analysis/lostark_market_analysis.py --out analysis_outputs
 
 전달 자료와 같은 가격일 범위를 재현하려면 `--end-date 2026-09-24`를 추가합니다.
 분석 의존성은 기존 수집 workflow에서 설치하지 않습니다.
+
+달력 기준 표준오차, 품목 간 효과 차이, 이벤트·요일 검정과 민감도 분석:
+
+```sh
+python analysis/lostark_market_robustness.py --end-date 2026-09-24 --out analysis_outputs/robustness
+python -m unittest discover -s analysis/tests -v
+```
+
+실제 DB 검증의 기간·환경·핵심 결과는 [검증 기록](analysis/VALIDATION.md)에 정리했습니다.
